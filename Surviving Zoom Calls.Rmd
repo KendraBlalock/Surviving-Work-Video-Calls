@@ -1,0 +1,140 @@
+---
+title: "Surviving Work Video Calls"
+author: "Kendra Blalock"
+date: "5/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(survival)
+library(survminer)
+
+```
+
+
+# Survival Analysis
+## aka Time-to-Event Analysis
+
+My main goal of this mini-project was to learn more about survival analysis (also called time-to-event analysis). While considering what kind of data set I might look for, my partner and I got into a discussion about how many hours of our lives are spent waiting. We wait at the airport, wait in traffic, wait in line at the grocery store, and wait for test results. Working from home has added a new flavor to waiting: waiting for video calls to start. 
+
+Over the past few weeks, I have recorded the amount of time it took for a work call to begin after the official start time. This includes all of the time staring at a message that the host will start the meeting soon, as well as the time spent in polite conversation while the entire group waits for that one person who is most important for the planned discussion, but apparently forgot about the meeting. 
+
+```{r load}
+
+#Load data
+zoom <- read.csv("Surviving Waiting - Zoom.csv")
+
+#Check out dataframe
+str(zoom)
+
+#Create a combined time variable
+zoom <- zoom %>% 
+  mutate(Time = Mins + (Secs/60))
+
+#Look and the min and max for Time variable
+summary(zoom$Time)
+
+```
+
+# Kaplan Meier Model   
+The first step was to run a basic Kaplan Meier Model and plot the curve. 
+```{r KMM}
+
+#Fit basic Kaplan Meier Model
+kmm1 <- survfit(Surv(zoom$Time, zoom$Meeting_Started) ~ 1,
+               type = "kaplan-meier")
+kmm1
+
+ggsurvplot(kmm1, 
+           data = zoom, 
+           conf.int = F,
+           palette = c("#D41159"),
+           xlab = "Minutes") 
+
+``` 
+
+Reviewing the plot, you can see that there was a rather steep drop in the curve as calls tended to start within the first few minutes. However, several video calls were significantly delayed in starting. 
+  
+Next I wanted to see if the curve differed based on whether the call was held in the morning or afternoon (determined by my time zone at the beginning of the call).
+
+```{r KMM2}
+
+#Fit Kaplan Meier Model for morning vs afternoon
+kmm2 <- survfit(Surv(zoom$Time, zoom$Meeting_Started) ~ zoom$Before_After_Noon,
+               type = "kaplan-meier")
+kmm2
+
+ggsurvplot(kmm2, 
+           data = zoom, 
+           conf.int = F,
+           palette = c("#D41159", "1a85ff"),
+           xlab = "Minutes", 
+           legend.labs = c("Afternoon", "Morning")) 
+
+#Seeing if wait time differs significantly for morning vs afternoon meetings
+survdiff(Surv(zoom$Time, zoom$Meeting_Started) ~ zoom$Before_After_Noon)
+
+rm(kmm1, kmm2)
+``` 
+
+While the plot shows that afternoon calls were more likely to be delayed in starting, the difference was not significant. 
+
+# Exponential Regression Model   
+For fun, I ran it again using an exponential model, and again the time of day was not significant. 
+```{r ERM}
+
+#Fit Exponential Regression Model   
+erm1 <- survreg(Surv(zoom$Time, zoom$Meeting_Started) ~ 1,
+               dist="exponential")
+erm1
+summary(erm1)
+
+
+#Fit Exponential Regression Model for morning vs afternoon
+erm2 <- survreg(Surv(zoom$Time, zoom$Meeting_Started) ~ zoom$Before_After_Noon,
+               dist="exponential")
+summary(erm2)
+
+rm(erm1, erm2)
+```
+
+# Cox Proportional Hazards Model    
+More commonly used is the Cox Proportional Hazard Model, so I reran it with this approach. 
+```{r CPHM}
+#Drop incomplete cases to be able to compare models
+zoom2 <- zoom %>% drop_na()
+
+#Fit Kaplan Meier Model for morning vs afternoon
+cphm2 <- coxph(Surv(zoom2$Time, zoom2$Meeting_Started) ~ zoom2$Before_After_Noon)
+summary(cphm2)
+
+```
+
+The test provides a hazard ratio of 1.68 for morning calls. This means at any given time, a morning call is 1.68 times more likely to start than an afternoon call at that time. It could also be said that a morning call has a 68% higher probability of starting.  
+
+The c statistic was 0.54 which produced a p-value of 0.2 for all 3 tests. 
+
+The next step was to add in a continuous variable to see if the model could be improved. While collecting data I noted the number of people who attended the meetings. I could imagine that the more people who attended the longer it would take to get the meeting started so as to allow late-comers to join. Alternatively, I wondered if meetings would have more pressure to get started on time if too many people were waiting. 
+```{r CPHM2}
+
+#Fit Kaplan Meier Model for morning vs afternoon & for number of meeting participants
+cphm3 <- coxph(Surv(zoom2$Time, zoom2$Meeting_Started) ~ zoom2$Before_After_Noon + zoom2$Num_People)
+
+summary(cphm3)
+
+anova(cphm2, cphm3)
+
+
+```
+At any given instant in time, the probability of the call starting was only 0.5% higher for a call with one more person attending. 
+
+The anova comparing the two models also showed that the additional variable contributed almost nothing to the model. 
+
+Regardless of the plots and the model results, one of the biggest insights I gathered from this project was how quickly many meetings do get started. Maybe it is just easier to remember the meetings that take a long time to get started, or maybe 1 minute waiting can feel like 3 minutes. Either way, I did not gather the evidence to support my casual complaining and I may need to divert my comments back to other traditional venues still requiring enormous wait times (I am looking at you, airport with only one security line open).
