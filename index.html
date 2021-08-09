@@ -507,7 +507,7 @@ summary(erm2)</code></pre>
 <pre class="r"><code>#Drop incomplete cases to be able to compare models
 zoom2 &lt;- zoom %&gt;% drop_na()
 
-#Fit Kaplan Meier Model for morning vs afternoon
+#Fit Cox Proportional Hazards Model for morning vs afternoon
 cphm2 &lt;- coxph(Surv(zoom2$Time, zoom2$Meeting_Started) ~ zoom2$Before_After_Noon)
 summary(cphm2)</code></pre>
 <pre><code>## Call:
